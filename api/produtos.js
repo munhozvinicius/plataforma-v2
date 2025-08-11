@@ -1,80 +1,86 @@
-import { neon } from '@neondatabase/serverless';
+import { getSql, readJson, send } from './_db.js';
 
-export const config = { runtime: 'edge' };
+export default async function handler(req, res) {
+  const sql = getSql();
+  const url = new URL(req.url, 'http://localhost');
+  const id = url.searchParams.get('id');
 
-function parseUrl(req) {
-  const u = new URL(req.url);
-  return { id: u.searchParams.get('id') };
-}
-
-export default async function handler(req) {
   try {
-    const url = process.env.POSTGRES_URL;
-    if (!url) return new Response(JSON.stringify({ ok:false, error:'Missing POSTGRES_URL' }), { status: 500 });
-    const sql = neon(url);
-
-    const { id } = parseUrl(req);
-
     if (req.method === 'GET') {
       if (id) {
-        const rows = await sql(`select * from produtos where id = $1`, [id]);
-        return new Response(JSON.stringify({ ok:true, data: rows[0] || null }), { headers: { 'content-type':'application/json' } });
+        const rows = await sql`SELECT * FROM produtos WHERE id = ${id} LIMIT 1;`;
+        send(res, 200, rows[0] || null);
       } else {
-        const rows = await sql(`select * from produtos order by ordem asc, id asc`);
-        return new Response(JSON.stringify({ ok:true, data: rows }), { headers: { 'content-type':'application/json' } });
+        const rows = await sql`SELECT * FROM produtos ORDER BY ordem ASC, id ASC;`;
+        send(res, 200, rows);
       }
+      return;
     }
 
     if (req.method === 'POST') {
-      const body = await req.json();
+      const body = await readJson(req);
       const {
-        titulo, subtitulo = '', emoji = '', caracteristicas = '',
-        tabelas = [], observacoes = '', agentes = [], ordem = 0
+        titulo, subtitulo, emoji,
+        caracteristicas, tabelas, observacoes,
+        agentes, ordem
       } = body || {};
 
-      if (!titulo) return new Response(JSON.stringify({ ok:false, error:'titulo is required' }), { status: 400 });
-
-      const rows = await sql(`
-        insert into produtos (titulo, subtitulo, emoji, caracteristicas, tabelas, observacoes, agentes, ordem)
-        values ($1,$2,$3,$4,$5::jsonb,$6,$7::jsonb,$8)
-        returning *
-      `, [titulo, subtitulo, emoji, caracteristicas, JSON.stringify(tabelas), observacoes, JSON.stringify(agentes), ordem]);
-
-      return new Response(JSON.stringify({ ok:true, data: rows[0] }), { headers: { 'content-type':'application/json' } });
+      const rows = await sql`
+        INSERT INTO produtos (titulo, subtitulo, emoji, caracteristicas, tabelas, observacoes, agentes, ordem)
+        VALUES (
+          ${titulo ?? ''},
+          ${subtitulo ?? ''},
+          ${emoji ?? ''},
+          ${caracteristicas ?? ''},
+          ${JSON.stringify(tabelas ?? [])}::jsonb,
+          ${observacoes ?? ''},
+          ${JSON.stringify(agentes ?? [])}::jsonb,
+          ${ordem ?? 0}
+        )
+        RETURNING *;
+      `;
+      send(res, 201, rows[0]);
+      return;
     }
 
     if (req.method === 'PUT') {
-      if (!id) return new Response(JSON.stringify({ ok:false, error:'id is required' }), { status: 400 });
-      const body = await req.json();
-      // Build dynamic update
-      const allowed = ['titulo','subtitulo','emoji','caracteristicas','tabelas','observacoes','agentes','ordem'];
-      const set = [];
-      const vals = [];
-      let i = 1;
-      for (const key of allowed) {
-        if (key in body) {
-          if (key === 'tabelas' || key === 'agentes') {
-            set.push(`${key} = $${i}::jsonb`); vals.push(JSON.stringify(body[key])); i++;
-          } else {
-            set.push(`${key} = $${i}`); vals.push(body[key]); i++;
-          }
+      if (!id) {
+        send(res, 400, { error: 'Missing id' });
+        return;
+      }
+      const body = await readJson(req);
+      // Build update dynamically
+      const fields = [];
+      const values = [];
+      for (const [key, val] of Object.entries(body || {})) {
+        if (['tabelas', 'agentes'].includes(key)) {
+          fields.push(sql`${sql(key)} = ${JSON.stringify(val)}::jsonb`);
+        } else {
+          fields.push(sql`${sql(key)} = ${val}`);
         }
       }
-      if (!set.length) return new Response(JSON.stringify({ ok:false, error:'no fields to update' }), { status: 400 });
-      vals.push(id);
-
-      const rows = await sql(`update produtos set ${set.join(', ')}, updated_at = now() where id = $${i} returning *`, vals);
-      return new Response(JSON.stringify({ ok:true, data: rows[0] }), { headers: { 'content-type':'application/json' } });
+      if (!fields.length) {
+        send(res, 400, { error: 'No fields to update' });
+        return;
+      }
+      await sql`UPDATE produtos SET ${sql.join(fields, sql`, `)} WHERE id = ${id};`;
+      const rows = await sql`SELECT * FROM produtos WHERE id = ${id};`;
+      send(res, 200, rows[0]);
+      return;
     }
 
     if (req.method === 'DELETE') {
-      if (!id) return new Response(JSON.stringify({ ok:false, error:'id is required' }), { status: 400 });
-      await sql(`delete from produtos where id = $1`, [id]);
-      return new Response(JSON.stringify({ ok:true }), { headers: { 'content-type':'application/json' } });
+      if (!id) {
+        send(res, 400, { error: 'Missing id' });
+        return;
+      }
+      await sql`DELETE FROM produtos WHERE id = ${id};`;
+      send(res, 200, { ok: true });
+      return;
     }
 
-    return new Response('Method Not Allowed', { status: 405 });
-  } catch (err) {
-    return new Response(JSON.stringify({ ok:false, error:String(err) }), { status: 500 });
+    send(res, 405, { error: 'Method not allowed' });
+  } catch (e) {
+    send(res, 500, { ok: false, error: String(e) });
   }
 }

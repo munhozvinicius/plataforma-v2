@@ -1,51 +1,40 @@
-import { neon } from '@neondatabase/serverless';
+import { getSql, send } from './_db.js';
 
-export const config = { runtime: 'edge' };
-
-export default async function handler() {
+export default async function handler(req, res) {
   try {
-    const url = process.env.POSTGRES_URL;
-    if (!url) {
-      return new Response(JSON.stringify({ ok: false, error: 'Missing POSTGRES_URL env' }), { status: 500 });
-    }
-    const sql = neon(url);
+    const sql = getSql();
 
-    // home table
-    await sql(`
-      create table if not exists home (
-        id integer primary key default 1,
-        hero_title text default '',
-        hero_subtitle text default '',
-        description text default '',
-        bg_color text default '#663399',
-        bg_image text default '',
-        cards jsonb default '[]',
-        updated_at timestamptz default now()
+    // Home: single row table
+    await sql`
+      CREATE TABLE IF NOT EXISTS home (
+        id INTEGER PRIMARY KEY,
+        titulo TEXT,
+        subtitulo TEXT,
+        descricao TEXT,
+        cor_fundo TEXT,
+        cards JSONB DEFAULT '[]'::jsonb
       );
-    `);
-    await sql(`insert into home (id) values (1) on conflict (id) do nothing;`);
+    `;
+    await sql`INSERT INTO home (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`;
 
-    // produtos table
-    await sql(`
-      create table if not exists produtos (
-        id bigserial primary key,
-        titulo text not null,
-        subtitulo text default '',
-        emoji text default '',
-        caracteristicas text default '',
-        tabelas jsonb default '[]',
-        observacoes text default '',
-        agentes jsonb default '[]',
-        ordem integer default 0,
-        created_at timestamptz default now(),
-        updated_at timestamptz default now()
+    // Produtos
+    await sql`
+      CREATE TABLE IF NOT EXISTS produtos (
+        id SERIAL PRIMARY KEY,
+        titulo TEXT NOT NULL,
+        subtitulo TEXT,
+        emoji TEXT,
+        caracteristicas TEXT,
+        tabelas JSONB DEFAULT '[]'::jsonb,
+        observacoes TEXT,
+        agentes JSONB DEFAULT '[]'::jsonb,
+        ordem INTEGER DEFAULT 0,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
       );
-    `);
+    `;
 
-    return new Response(JSON.stringify({ ok: true }), {
-      headers: { 'content-type': 'application/json' }
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ ok: false, error: String(err) }), { status: 500 });
+    send(res, 200, { ok: true });
+  } catch (e) {
+    send(res, 500, { ok: false, error: String(e) });
   }
 }
