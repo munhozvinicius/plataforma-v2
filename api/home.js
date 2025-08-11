@@ -1,32 +1,28 @@
-import { getSql, readJson, send } from './_db.js';
+import { db, json, readBody } from './_db.js';
 
 export default async function handler(req, res) {
-  const sql = getSql();
   try {
     if (req.method === 'GET') {
-      const rows = await sql`SELECT id, titulo, subtitulo, descricao, cor_fundo, cards FROM home WHERE id = 1;`;
-      send(res, 200, rows[0] || { id: 1, titulo: '', subtitulo: '', descricao: '', cor_fundo: '#663399', cards: [] });
-      return;
+      const rows = await db`SELECT * FROM home WHERE id = 1;`;
+      return json(res, 200, rows[0] || {});
     }
-
     if (req.method === 'POST') {
-      const body = await readJson(req);
-      const { titulo, subtitulo, descricao, cor_fundo, cards } = body || {};
-      await sql`
-        UPDATE home SET
-          titulo = ${titulo ?? ''},
-          subtitulo = ${subtitulo ?? ''},
-          descricao = ${descricao ?? ''},
-          cor_fundo = ${cor_fundo ?? '#663399'},
-          cards = ${JSON.stringify(cards ?? [])}::jsonb
-        WHERE id = 1;
-      `;
-      send(res, 200, { ok: true });
-      return;
+      const body = await readBody(req);
+      const { titulo, subtitulo, descricao, cor_fundo, imagem_fundo } = body || {};
+      await db`INSERT INTO home (id, titulo, subtitulo, descricao, cor_fundo, imagem_fundo)
+               VALUES (1, ${titulo || ''}, ${subtitulo || ''}, ${descricao || ''}, ${cor_fundo || ''}, ${imagem_fundo || ''})
+               ON CONFLICT (id) DO UPDATE SET
+                  titulo = EXCLUDED.titulo,
+                  subtitulo = EXCLUDED.subtitulo,
+                  descricao = EXCLUDED.descricao,
+                  cor_fundo = EXCLUDED.cor_fundo,
+                  imagem_fundo = EXCLUDED.imagem_fundo;`;
+      const rows = await db`SELECT * FROM home WHERE id = 1;`;
+      return json(res, 200, rows[0] || {});
     }
-
-    send(res, 405, { error: 'Method not allowed' });
+    res.setHeader('Allow', 'GET, POST');
+    return json(res, 405, { error: 'Method not allowed' });
   } catch (e) {
-    send(res, 500, { ok: false, error: String(e) });
+    return json(res, 500, { ok: false, error: e.message });
   }
 }

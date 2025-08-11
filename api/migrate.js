@@ -1,40 +1,36 @@
-import { getSql, send } from './_db.js';
+import { db, json } from './_db.js';
 
 export default async function handler(req, res) {
   try {
-    const sql = getSql();
+    // Home table with a single row (id=1)
+    await db`CREATE TABLE IF NOT EXISTS home (
+      id integer PRIMARY KEY,
+      titulo text,
+      subtitulo text,
+      descricao text,
+      cor_fundo text,
+      imagem_fundo text
+    );`;
 
-    // Home: single row table
-    await sql`
-      CREATE TABLE IF NOT EXISTS home (
-        id INTEGER PRIMARY KEY,
-        titulo TEXT,
-        subtitulo TEXT,
-        descricao TEXT,
-        cor_fundo TEXT,
-        cards JSONB DEFAULT '[]'::jsonb
-      );
-    `;
-    await sql`INSERT INTO home (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`;
+    await db`INSERT INTO home (id, titulo) VALUES (1, '')
+             ON CONFLICT (id) DO NOTHING;`;
 
-    // Produtos
-    await sql`
-      CREATE TABLE IF NOT EXISTS produtos (
-        id SERIAL PRIMARY KEY,
-        titulo TEXT NOT NULL,
-        subtitulo TEXT,
-        emoji TEXT,
-        caracteristicas TEXT,
-        tabelas JSONB DEFAULT '[]'::jsonb,
-        observacoes TEXT,
-        agentes JSONB DEFAULT '[]'::jsonb,
-        ordem INTEGER DEFAULT 0,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-      );
-    `;
+    // Produtos table
+    await db`CREATE TABLE IF NOT EXISTS produtos (
+      id serial PRIMARY KEY,
+      slug text UNIQUE,
+      titulo text,
+      subtitulo text,
+      emoji text,
+      caracteristicas jsonb,
+      tabelas jsonb,
+      observacoes text,
+      agentes jsonb,
+      ordem integer DEFAULT 9999
+    );`;
 
-    send(res, 200, { ok: true });
+    return json(res, 200, { ok: true });
   } catch (e) {
-    send(res, 500, { ok: false, error: String(e) });
+    return json(res, 500, { ok: false, error: e.message });
   }
 }

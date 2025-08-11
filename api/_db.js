@@ -1,16 +1,21 @@
 import { neon } from '@neondatabase/serverless';
 
-export function getSql() {
-  const url = process.env.POSTGRES_URL;
-  if (!url) {
-    throw new Error('POSTGRES_URL not set');
-  }
-  return neon(url);
+// Ensure the env var exists
+const url = process.env.POSTGRES_URL || process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL;
+if (!url) {
+  throw new Error('POSTGRES_URL env var not set');
 }
 
-// tiny util for Node serverless to parse JSON body
-export async function readJson(req) {
-  return await new Promise((resolve, reject) => {
+export const db = neon(url);
+
+export async function json(res, status, data) {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.end(JSON.stringify(data));
+}
+
+export async function readBody(req) {
+  return new Promise((resolve, reject) => {
     let data = '';
     req.on('data', chunk => { data += chunk; });
     req.on('end', () => {
@@ -20,12 +25,6 @@ export async function readJson(req) {
         reject(e);
       }
     });
+    req.on('error', reject);
   });
-}
-
-// common JSON responder
-export function send(res, status, payload) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify(payload));
 }
